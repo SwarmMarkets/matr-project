@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {IERC20, ERC20, ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 interface IERC20Burnable is IERC20 {
@@ -19,6 +20,7 @@ interface IERC20Burnable is IERC20 {
  * @dev Contract module used to lock MATR during Vesting period.
  */
 contract vMATR is AccessControl, ERC20Pausable {
+    using SafeERC20 for IERC20Burnable;
     error ZeroAddressPasted();
     error InvalidStartTime(uint256 currentStartTime);
     error StartTimeMustBeGreaterThanCurrent(uint256 givenStartTime);
@@ -120,9 +122,9 @@ contract vMATR is AccessControl, ERC20Pausable {
      * - `acceptedToken` need to be approved first by caller on `acceptedToken` contract
      */
     function deposit(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        acceptedToken.transferFrom(msg.sender, address(this), _amount);
-
         _mint(msg.sender, _amount);
+
+        acceptedToken.safeTransferFrom(msg.sender, address(this), _amount);
     }
 
     /**
@@ -345,7 +347,7 @@ contract vMATR is AccessControl, ERC20Pausable {
         claimings[msg.sender] += amount;
         _burn(msg.sender, amount);
 
-        acceptedToken.transfer(msg.sender, amount);
+        acceptedToken.safeTransfer(msg.sender, amount);
 
         emit Claim(msg.sender, amount);
     }
