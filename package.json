@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "author": "Swarm",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "scripts": {
     "clean": "hardhat clean",
     "compile": "hardhat compile",
