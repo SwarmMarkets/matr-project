@@ -1,67 +1,97 @@
-//SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 pragma solidity ^0.8.19;
 
 import {IERC20, ERC20, ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
+/// @title Interface for ERC20 Burnable Token
 interface IERC20Burnable is IERC20 {
     /**
-     * @dev Destroys `amount` tokens from the caller.
-     *
-     * See {ERC20-_burn}.
+     * @dev Destroys `amount` tokens from the caller, reducing the total supply.
+     * @param amount The amount of tokens to burn.
      */
     function burn(uint256 amount) external;
 }
 
 /**
- * @title MATR vesting
- * @author Swarm
- * @dev Contract module used to lock MATR during Vesting period.
+ * @title MATR Vesting Contract
+ * @notice Contract module used to lock MATR tokens during the vesting period. It allows for time-based vesting and token claims.
+ * @dev Inherits from AccessControl for role-based permissions, and ERC20Pausable for pause functionality. The contract uses SafeERC20 for safe token transfers.
  */
 contract vMATR is AccessControl, ERC20Pausable {
     using SafeERC20 for IERC20Burnable;
+
+    /// @notice Custom error for zero address operations.
     error ZeroAddressPasted();
+
+    /// @notice Custom error for invalid start time operations.
     error InvalidStartTime(uint256 currentStartTime);
+
+    /// @notice Custom error for setting a start time that is not in the future.
     error StartTimeMustBeGreaterThanCurrent(uint256 givenStartTime);
+
+    /// @notice Custom error when distribution start time is not set.
     error DistributionStartTimeIsNotSet();
-    error GivenAmountIsTooBig(uint256 rquiredAmount, uint256 givenAmount);
+
+    /// @notice Custom error when the given claim amount exceeds the allowable limit.
+    error GivenAmountIsTooBig(uint256 requiredAmount, uint256 givenAmount);
+
+    /// @notice Custom error when there is no claimable amount available.
     error NoClaimableAmount();
+
+    /// @notice Custom error when vesting has not started.
     error VestingNotStarted();
+
+    /// @notice Custom error for transfers by non-whitelisted addresses.
     error OnlyWhitelistedTransfer();
+
+    /// @notice Custom error for removing an invalid address from the whitelist.
     error InvalidAddressToRemove(address toRemove);
 
+    /// @notice Role identifier for pausers.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    /// @dev multiplier constants
+
+    /// @notice Multiplier constants for vesting calculation.
     uint256 private constant VESTING_TIME = 20 days;
 
-    /// @dev ERC20 basic token contract being held
+    /// @notice ERC20 token contract being held.
     IERC20Burnable public acceptedToken;
 
-    /// @dev distribution start timestamp
+    /// @notice Distribution start timestamp.
     uint256 public distributionStartTime;
-    /// @dev Know Your Asset
+
+    /// @notice KYA (Know Your Asset) information.
     string public kya;
 
-    /// @dev transferable addresses whitelisted
+    /// @notice Whitelist for transferable addresses.
     mapping(address => bool) public whitelisted;
-    /// @dev transferable addresses whitelisted
+
+    /// @notice Record of claim amounts.
     mapping(address => uint256) public claimings;
 
+    /// @notice Vesting multipliers.
     mapping(uint256 => uint256) public multiplier;
 
-    /// @dev Emitted when `owner` claims.
+    /// @notice Emitted when a user claims tokens.
     event Claim(address indexed owner, uint256 amount);
-    /// @dev Emitted when `owner` claims.
+
+    /// @notice Emitted when accepted token is set.
     event AcceptedTokenSet(address _acceptedToken);
-    /// @dev Emitted when `owner` claims.
+
+    /// @notice Emitted when distribution start time is set.
     event StartTimeSet(uint256 startTime);
-    /// @dev Emitted when one address is included in transferable whitelisted.
+
+    /// @notice Emitted when an address is added to the whitelist.
     event WhitelistedAddressAdded(address whitelisted);
-    /// @dev Emitted when one address is included in transferable whitelisted.
+
+    /// @notice Emitted when an address is removed from the whitelist.
     event WhitelistedAddressRemoved(address removed);
+
+    /// @notice Emitted when KYA information is set.
     event KYAset(string kya);
 
+    /// @dev Modifier to check for zero address input.
     modifier zeroAddressCheck(address _address) {
         if (_address == address(0)) {
             revert ZeroAddressPasted();
@@ -69,6 +99,7 @@ contract vMATR is AccessControl, ERC20Pausable {
         _;
     }
 
+    /// @dev Modifier to ensure distribution time is set.
     modifier isDistributionTimeSet() {
         if (distributionStartTime == 0) {
             revert DistributionStartTimeIsNotSet();
@@ -77,12 +108,8 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev Grants `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE` and `PAUSER_ROLE` to the
-     * account that deploys the contract.
-     * Sets the value for {distributionStartTime}, signaling that distribution yet needs to be determined by admin
-     *
-     * Sets ownership to the given `_owner`.
-     * See {ERC20-constructor}.
+     * @dev Sets up roles and initializes the contract.
+     * Grants `DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE` to the deployer.
      */
     constructor() ERC20("vMATR", "vMATR") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -97,14 +124,8 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev Sets the value for `acceptedToken`.
-     *
-     * Requirements:
-     *
-     * - the caller must have DEFAULT_ADMIN_ROLE.
-     * - `_token` can't be zero address
-     * - `acceptedToken` should not be already set
-     *
+     * @dev Sets the accepted ERC20 token for vesting.
+     * @param _token The address of the ERC20 token to be accepted.
      */
     function setAcceptedToken(
         address _token
@@ -114,26 +135,17 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev Locks certain  _amount of `acceptedToken`.
-     *
-     * Requirements:
-     *
-     * - the caller must have DEFAULT_ADMIN_ROLE.
-     * - `acceptedToken` need to be approved first by caller on `acceptedToken` contract
+     * @dev Deposits a specific amount of the accepted token for vesting.
+     * @param _amount The amount of tokens to deposit.
      */
     function deposit(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _mint(msg.sender, _amount);
-
         acceptedToken.safeTransferFrom(msg.sender, address(this), _amount);
     }
 
     /**
-     * @dev sets kya
-     *
-     * Requirements:
-     *
-     * - the caller must have DEFAULT_ADMIN_ROLE.
-     *
+     * @dev Sets the KYA information.
+     * @param _knowYourAsset The KYA string.
      */
     function setKYA(
         string calldata _knowYourAsset
@@ -143,12 +155,8 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev add _address to the whitelist, signaling that it can make transfers of this token
-     *
-     * Requirements:
-     *
-     * - the caller must have DEFAULT_ADMIN_ROLE.
-     * - `_address` can not be zero address
+     * @dev Adds an address to the transfer whitelist.
+     * @param _address The address to whitelist.
      */
     function addWhitelistedAddress(
         address _address
@@ -158,12 +166,8 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev add _address to the whitelist, signaling that it can make transfers of this token
-     *
-     * Requirements:
-     *
-     * - the caller must have DEFAULT_ADMIN_ROLE.
-     * - `_address` can not be zero address
+     * @dev Removes an address from the transfer whitelist.
+     * @param _address The address to remove from the whitelist.
      */
     function removeWhitelistedAddress(
         address _address
@@ -177,12 +181,8 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev sets distributionStartTime as the timestamp on which funds starts a progressive release
-     *
-     * Requirements:
-     *
-     * - distributionStartTime must be equal to 0
-     * - distributionStartTime must be a Unix timestamp format, grater than current timestamp
+     * @dev Sets the distribution start time for vesting.
+     * @param startTime The start time as a Unix timestamp.
      */
     function setStartTime(
         uint256 startTime
@@ -202,12 +202,7 @@ contract vMATR is AccessControl, ERC20Pausable {
 
     /**
      * @dev Pauses all token transfers.
-     *
-     * See {ERC20Pausable} and {Pausable-_pause}.
-     *
-     * Requirements:
-     *
-     * - the caller must have the `PAUSER_ROLE`.
+     * This function can only be called by accounts with the `PAUSER_ROLE`.
      */
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
@@ -215,25 +210,15 @@ contract vMATR is AccessControl, ERC20Pausable {
 
     /**
      * @dev Unpauses all token transfers.
-     *
-     * See {ERC20Pausable} and {Pausable-_unpause}.
-     *
-     * Requirements:
-     *
-     * - the caller must have the `PAUSER_ROLE`.
+     * This function can only be called by accounts with the `PAUSER_ROLE`.
      */
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
     /**
-     * @dev burns certain `amount` of vMATR token and release equivalent balance of acceptedToken
-     *
-     * Requirements:
-     *
-     * - amount must be lower or equal than ClaimableAmount
-     * - distributionStartTime must be different than 0
-     * - `_address` can not be zero address
+     * @dev Burns a specific amount of vMATR tokens and releases equivalent balance of acceptedToken.
+     * @param amount The amount of vMATR tokens to burn.
      */
     function claim(uint256 amount) external {
         uint requiredAmount = getClaimableAmount(msg.sender);
@@ -244,22 +229,28 @@ contract vMATR is AccessControl, ERC20Pausable {
         _claim(amount);
     }
 
+    /**
+     * @dev Burns a specific amount of vMATR tokens.
+     * @param amount The amount of vMATR tokens to burn.
+     */
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
-
-        acceptedToken.burn(amount);
-    }
-
-    function burnFrom(address tokensOwner, uint256 amount) external {
-        _spendAllowance(tokensOwner, msg.sender, amount);
-        _burn(tokensOwner, amount);
-
         acceptedToken.burn(amount);
     }
 
     /**
-     * @dev claims maximum available amount from caller's holdings
-     *
+     * @dev Burns a specific amount of vMATR tokens from a given account.
+     * @param tokensOwner The owner of the tokens to burn.
+     * @param amount The amount of vMATR tokens to burn.
+     */
+    function burnFrom(address tokensOwner, uint256 amount) external {
+        _spendAllowance(tokensOwner, msg.sender, amount);
+        _burn(tokensOwner, amount);
+        acceptedToken.burn(amount);
+    }
+
+    /**
+     * @dev Claims the maximum available amount from the caller's holdings.
      */
     function claimMaximumAmount() external {
         uint256 requiredAmount = getClaimableAmount(msg.sender);
@@ -271,12 +262,9 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev calculates how much is currently available to be claimed by caller
-     *
-     * Requirements:
-     *
-     * - distributionStartTime must be different from 0
-     * - if distributionStartTime is different in grater than current timestamp, this function reverts
+     * @dev Calculates the claimable amount for a specific address.
+     * @param awarded The address to calculate the claimable amount for.
+     * @return amount The claimable amount for the address.
      */
     function getClaimableAmount(
         address awarded
@@ -293,7 +281,10 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev returns number of quarters passed from distributionStartTime
+     * @notice Calculates the number of vesting periods that have passed since the distribution start time.
+     * @dev Calculates the elapsed vesting periods based on the `distributionStartTime` and `VESTING_TIME`.
+     * @return currentQuarter The number of elapsed vesting periods since the distribution start time.
+     * @custom:error VestingNotStarted Thrown if the current timestamp is before the `distributionStartTime`.
      */
     function currentVestingPeriodSinceStartTime()
         public
@@ -311,8 +302,10 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev check funds locked by this contract in terms of acceptedToken's balance
-     * should be always equal to totalSupply, useful as a doublecheck control
+     * @notice Retrieves the total amount of the accepted token currently locked in the contract.
+     * @dev Returns the balance of the accepted token (`acceptedToken`) held by this contract.
+     *      This amount should always be equal to the total supply of the vMATR token.
+     * @return balanceOfAcceptedToken The total amount of the accepted token currently locked in this contract.
      */
     function getCurrentLockedAmount()
         external
@@ -323,8 +316,12 @@ contract vMATR is AccessControl, ERC20Pausable {
     }
 
     /**
-     * @dev only whitelisted address are allowed to transfer this token's ownership
-     * - address 0x0 are allowed by default cause we need to burn and mint tokens
+     * @notice Enforces transfer restrictions, allowing only whitelisted addresses to transfer tokens.
+     * @dev Overrides `_beforeTokenTransfer` to include whitelist checks. Allows minting and burning by default.
+     * @param from The address transferring the tokens.
+     * @param to The address receiving the tokens.
+     * @param amount The amount of tokens being transferred.
+     * @custom:error OnlyWhitelistedTransfer Thrown if the sender is not whitelisted for transfers.
      */
     function _beforeTokenTransfer(
         address from,
@@ -343,6 +340,12 @@ contract vMATR is AccessControl, ERC20Pausable {
         }
     }
 
+    /**
+     * @notice Internal function to handle claims of the accepted token by burning vMATR tokens.
+     * @dev Burns `amount` of vMATR tokens from the caller's balance and transfers the same amount of accepted tokens.
+     *      Also updates the `claimings` state to reflect the claimed amount.
+     * @param amount The amount of vMATR tokens to burn and the equivalent amount of accepted tokens to claim.
+     */
     function _claim(uint256 amount) internal {
         claimings[msg.sender] += amount;
         _burn(msg.sender, amount);
