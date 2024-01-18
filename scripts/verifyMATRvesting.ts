@@ -4,7 +4,7 @@ const { ethers } = hre;
 async function main(): Promise<void> {
   const [owner] = await ethers.getSigners();
   await hre.run('verify:verify', {
-    address: '0xB89251248F987F45f2911a8dcA6CD20Ac81119B9',
+    address: '0x78320DcFC452285BAe0289c7c6C919f0C4948B42',
     constructorArguments: []
   });
 
