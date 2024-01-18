@@ -33,7 +33,7 @@ contract vMATR is AccessControl, ERC20Pausable {
 
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     /// @dev multiplier constants
-    uint256 private constant VESTING_TIME = 10 minutes;
+    uint256 private constant VESTING_TIME = 20 days;
 
     /// @dev ERC20 basic token contract being held
     IERC20Burnable public acceptedToken;
