@@ -43,7 +43,7 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.8.0",
+    "@openzeppelin/contracts": "^4.9.6",
     "csv-parser": "^3.0.0"
   }
 }
